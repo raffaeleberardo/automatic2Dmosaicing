@@ -18,11 +18,13 @@ import matplotlib.pyplot as plt
 SRC_IMAGES_FOLDER = "images"
 SRC_TEST = ["test_1", "test_2", "test_3"]
 
+CONSIDERED = SRC_TEST[2]
+
 DST_MOSAICING_FOLDER = "mosaicing"
 
 # Read the images
 print("[INFO] loading images...")
-imagePaths = sorted(list(paths.list_images(f"{SRC_IMAGES_FOLDER}/{SRC_TEST[0]}")))
+imagePaths = sorted(list(paths.list_images(f"{SRC_IMAGES_FOLDER}/{CONSIDERED}")))
 images = []
 
 # For every given path we read the corrisponding image and we put it in the list of images
@@ -89,8 +91,10 @@ while i < len(images):
         # result[0:ref_img.shape[0], 0:ref_img.shape[1]] = ref_img
         # ref_img = result
         # ref_img = cv.addWeighted(src1=ref_img, alpha=0.8, src2=result, beta=0.5, gamma=0)
-        ref_img = cv.add(src1=ref_img, src2=result)
-        plt.title("Result"),plt.imshow(ref_img), plt.savefig(f"{DST_MOSAICING_FOLDER}/mosaicing_{i}.jpg"), plt.show()
+        # ref_img = cv.add(src1=ref_img, src2=result)
+        ref_img = np.where(result == 0, np.add(ref_img, result), result)
+        plt.title("Result"),plt.imshow(ref_img), plt.savefig(f"{DST_MOSAICING_FOLDER}/{CONSIDERED}/mosaicing_{i}.jpg"), plt.show()
+
         (ref_kp, ref_des) = sift.detectAndCompute(ref_img, None)
         i = i + 1
     else:
