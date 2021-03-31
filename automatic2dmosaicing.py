@@ -17,6 +17,15 @@ def blending(ref_img, warped_img):
     ref_img = np.divide(ref_img, w_tot, out=np.zeros_like(ref_img), where=w_tot != 0).astype("uint8")
     return ref_img
 
+def cropping(img):
+    gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
+    _, thresh = cv.threshold(gray, 1, 255, cv.THRESH_BINARY)
+    contours, hierarchy = cv.findContours(thresh, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+    cnt = contours[0]
+    x, y, w, h = cv.boundingRect(cnt)
+    crop = img[y:y + h, x:x + w]
+    return crop
+
 
 # ALGORITHM
 # 1) Choose one image of the set as a reference
@@ -31,7 +40,7 @@ def blending(ref_img, warped_img):
 SRC_IMAGES_FOLDER = "images"
 SRC_TEST = ["test_1", "test_2", "test_3"]
 
-CONSIDERED = SRC_TEST[0]
+CONSIDERED = SRC_TEST[2]
 
 DST_MOSAICING_FOLDER = "mosaicing"
 DST_SIFT_FOLDER = "sift"
@@ -115,5 +124,6 @@ while i < len(images):
     else:
         print(f"[INFO] not enough matches are found for image_{i}")
 
+ref_img = cropping(ref_img)
 cv.imwrite(f"{DST_MOSAICING_FOLDER}/{CONSIDERED}/final_result.jpg", ref_img)
 
