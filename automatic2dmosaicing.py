@@ -6,16 +6,22 @@ from imutils import paths
 import matplotlib.pyplot as plt
 from scipy.ndimage.morphology import distance_transform_edt
 
-def blending(ref_img, warped_img):
-    w_ref = distance_transform_edt(ref_img)
-    w_ref = np.divide(w_ref, np.max(w_ref))
-    w_warp = distance_transform_edt(warped_img)
-    w_warp = np.divide(w_warp, np.max(w_warp))
-    ref_img = np.add(np.multiply(ref_img, w_ref), np.multiply(warped_img, w_warp))
-    w_tot = w_warp + w_ref
+def blending(I1, I2):
 
-    ref_img = np.divide(ref_img, w_tot, out=np.zeros_like(ref_img), where=w_tot != 0).astype("uint8")
-    return ref_img
+    # WEIGHTENED BLENDING: I_blend = (I1 * w1 + I2 * w2)/(w1 + w2)
+    # For us I1 = ref_img, I2 = warped_img
+    # distance_transform_edt gives more weight to the px in the centre of the image and less on the borders
+    w1 = distance_transform_edt(I1)
+    w1 = np.divide(w1, np.max(w1))
+    w2 = distance_transform_edt(I2)
+    w2 = np.divide(w2, np.max(w2))
+
+    #STITCHING THE TWO IMAGES
+    I1 = np.add(np.multiply(I1, w1), np.multiply(I2, w2))
+    w_tot = w1 + w2
+    I1 = np.divide(I1, w_tot, out=np.zeros_like(I1), where=w_tot != 0).astype("uint8")
+
+    return I1
 
 def cropping(img):
     gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
@@ -37,12 +43,20 @@ def cropping(img):
 # NOTE: compute the homographies by RANSAC (we need at least 4 corresponding points)
 
 
+# folder where we search our test images
 SRC_IMAGES_FOLDER = "images"
+
+# folders where we keep test images for folder images and where we keep results for mosaicing folder
 SRC_TEST = ["test_1", "test_2", "test_3"]
 
-CONSIDERED = SRC_TEST[2]
+# selected test folder. It is the folder with the relative images for the stitching
+# and also where we store the results
+CONSIDERED = SRC_TEST[1]
 
+# folder where we keep the results
 DST_MOSAICING_FOLDER = "mosaicing"
+
+#folder in which we have the features points of our tested images
 DST_SIFT_FOLDER = "sift"
 
 # Read the images
@@ -61,6 +75,8 @@ if len(images) == 0:
 # compute the salient points with SIFT for every image
 sift = cv.SIFT_create()
 points = []
+
+# Save the images with the salient points drawn
 fig, ax = plt.subplots(nrows=len(images))
 fig.suptitle("SIFT for each given image", fontsize=14)
 for i, img in enumerate(images):
@@ -75,12 +91,14 @@ for i, img in enumerate(images):
 plt.savefig(f"{DST_MOSAICING_FOLDER}/{CONSIDERED}/{DST_SIFT_FOLDER}/corresponding_points.jpg")
 plt.show()
 
+# we use this to compute the matches between pair of images
 FLANN_INDEX_KDTREE = 1
 index_params = dict(algorithm=FLANN_INDEX_KDTREE, trees=5)
 search_params = dict(checks=500)
 flann = cv.FlannBasedMatcher(index_params, search_params)
 
-ref_img = images.pop(0) # I take the first image as a reference for the matching with the others
+# I take the first image as a reference for the matching with the others
+ref_img = images.pop(0)
 (ref_kp, ref_des) = points.pop(0)
 width = ref_img.shape[1]
 height = ref_img.shape[0]
@@ -98,12 +116,14 @@ i = 0
 while i < len(images):
     img = images[i]
     (kp, des) = points[i]
+    # compute the matches and keep 2 nearest neighbour
     matches = flann.knnMatch(des, ref_des, k=2)
     # store all the good matches as per Lowe's ratio test.
     good = []
     for m, n in matches:
         if m.distance < 0.7 * n.distance:
             good.append(m)
+
     if len(good) >= MIN_MATCH_COUNT:
         print(f"[INFO] match between reference and image_{i} found...")
         src_pts = np.float32([kp[m.queryIdx].pt for m in good]).reshape(-1,1,2) # source points -> where I am
