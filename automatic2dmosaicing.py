@@ -5,6 +5,7 @@ from imutils import paths
 import matplotlib.pyplot as plt
 from scipy.ndimage.morphology import distance_transform_edt
 import os
+from tqdm import tqdm
 
 def goodMatches(ref_des, des, matcher):
     '''
@@ -102,23 +103,27 @@ def main():
 
     # folders where we keep test images for folder images and where we keep results for mosaicing folder
     SRC_TEST = ["room1",  # 0
-                "room2",  # 1
-                "bridge",  # 2
-                "building_site",  # 3
-                "big_house",  # 4
-                "river",  # 5
-                "roof",  # 6
-                "not_common",  # 7
-                "carmel",  # 8
-                "golden_gate",  # 9
-                "halfdome",  # 10
-                "diamondhead",  # 11
-                "fishbowl",  # 12
-                "shangai"]  # 13
+                "bridge",  # 1
+                "building_site",  # 2
+                "big_house",  # 3
+                "river",  # 4
+                "roof",  # 5
+                "not_common",  # 6
+                "carmel",  # 7
+                "golden_gate",  # 8
+                "halfdome",  # 9
+                "diamondhead",  # 10
+                "fishbowl",  # 11
+                "shangai",  # 12
+                "yard",  # 13
+                "rio",  # 14
+                "office",  # 15
+                "hotel",  # 16
+                "alpe_siusi"]  # 17
 
     # selected test folder. It is the folder with the images for the stitching
     # and also it is the folder where we store the results
-    CONSIDERED = SRC_TEST[11]
+    CONSIDERED = SRC_TEST[17]
 
     # folder where we keep the results
     SRC_TEST = "source_images"
@@ -151,7 +156,10 @@ def main():
 
     # this means that we don't read images
     if len(images) == 0:
+        print("[INFO] No image to read!")
         sys.exit()
+
+    print("[INFO] Finish to read the images")
 
     # compute the salient points with the SIFT method for every image
 
@@ -165,58 +173,74 @@ def main():
         cv.imwrite(f"{SAVE_SIFT}/gray_{i+1}.jpg", gray)
         points.append((kp, des))
 
+    print("[INFO] SIFT computed for every image in the list")
+
     # I take the first image as a reference for the matching with the others
-    ref_img = images.pop(0)
-    (ref_kp, ref_des) = points.pop(0)
+    first = 0  #  (len(images)-1)//2
+    ref_img = images.pop(first)
+    del points[first]
 
     # we use this to compute the matches between pair of images
     FLANN_INDEX_KDTREE = 1
-    index_params = dict(algorithm=FLANN_INDEX_KDTREE, trees=300)
-    search_params = dict(checks=500)
+    index_params = dict(algorithm=FLANN_INDEX_KDTREE, trees=2)
+    search_params = dict() #  dict(checks=500)
     flann = cv.FlannBasedMatcher(index_params, search_params)
 
     # we want a minimum of 4 number of matching points to estimate the homography
     # we want also enough points to discriminate an image from one that isn't a representation of the same scene, this is why we choose a greater number than 4,
     # 50 in our case.
 
-    MIN_MATCH_COUNT = 50
+    MIN_MATCH_COUNT = 10
+
+    print("[INFO] Working on the stitching...")
 
     while len(images) > 0:
 
         max_matching = []
         best_params = {}
 
-        for i in range(len(images)):
-            ref_img = cropping(ref_img)
+        print("[INFO] Searching the image with the large number of correspondencies...")
+
+        for i in tqdm(range(len(images))):
+
             img = images[i]
             (kp, des) = points[i]
+
 
             ref_img = createFrame(ref_img, img)  # create a frame where we put the ref_img
             gray = cv.cvtColor(ref_img, cv.COLOR_BGR2GRAY)
             (ref_kp, ref_des) = sift.detectAndCompute(gray, None)
 
-            matches = goodMatches(ref_des=ref_des, des=des, matcher=flann)
-            if len(max_matching) < len(matches):
-                max_matching = matches
-                best_params = {
-                    "kp" : kp,
-                    "des" : des,
-                    "matches" : max_matching,
-                    "idx" : i,
-                    "img" : img
-                }
+            if len(ref_kp) >= 2:
+                matches = goodMatches(ref_des=ref_des, des=des, matcher=flann)
+                if len(max_matching) < len(matches):
+                    max_matching = matches
+                    best_params = {
+                        "matches" : max_matching,
+                        "ref_kp" : ref_kp,
+                        "ref_des" : ref_des,
+                        "idx" : i,
+                        "ref_img" : ref_img
+                    }
+            else:
+                print("[WARNING] Reference image has not enough keypoints")
+                sys.exit()
+            ref_img = cropping(ref_img)
 
+        ref_img = best_params["ref_img"]
+        (ref_kp, ref_des) = (best_params["ref_kp"], best_params["ref_des"])
         i = best_params["idx"]
+        # (kp, des) = (best_params["kp"], best_params["des"])
         matches = best_params["matches"]
-        (kp, des) = (best_params["kp"], best_params["des"])
         width = ref_img.shape[1]
         height = ref_img.shape[0]
 
+        print(f"[INFO] Number of good matches: {len(matches)}")
+
         if len(matches) >= MIN_MATCH_COUNT:
-            img = best_params["img"]
-            del images[i]
-            del points[i]
-            print(f"[INFO] match between reference and image_{i} found...")
+            img = images.pop(i)
+            (kp, des) = points.pop(i)
+            print(f"[INFO] Match between reference and image_{i} found...")
             src_pts = np.float32([kp[m.queryIdx].pt for m in matches]).reshape(-1,1,2) # source points -> where I am
             dst_pts = np.float32([ref_kp[m.trainIdx].pt for m in matches]).reshape(-1,1,2) # destination points -> where I want to be
             # compute the homography
@@ -232,6 +256,7 @@ def main():
             # ref_img = np.where(ref_img == 0, warped_img, ref_img)
             ref_img = blending(ref_img, warped_img)
             ref_img = cropping(ref_img)
+            cv.imwrite(f"{SAVE_MOSAICING}/final_result.jpg", ref_img)
             print("[INFO] blending finished...")
             plt.title("Result after the blending"),plt.imshow(ref_img), plt.savefig(f"{SAVE_MOSAICING}/mosaicing_{i}.jpg"), plt.show()
 
@@ -239,9 +264,6 @@ def main():
             print(f"[WARNING] not enough matches found for image_{i}")
             break
 
-    # We crop and save the final results
-    ref_img = cropping(ref_img)
-    cv.imwrite(f"{SAVE_MOSAICING}/final_result.jpg", ref_img)
 
 if __name__ == "__main__":
     main()
